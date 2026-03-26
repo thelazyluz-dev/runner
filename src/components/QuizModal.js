@@ -6,42 +6,78 @@ import {
   Modal,
   Animated,
   StyleSheet,
-  Dimensions,
 } from 'react-native';
 
-const { width: W } = Dimensions.get('window');
+const RESULT_DELAY_MS      = 650;  // how long to show correct/wrong highlight
+const SECOND_CHANCE_DELAY  = 800;  // delay before showing "try again?" screen
 
-const RESULT_DELAY_MS = 700;
+export default function QuizModal({
+  question,
+  onAnswer,
+  hasExtraLife   = false,
+  onUseExtraLife = () => {},
+}) {
+  // ── phase: 'answering' | 'second_chance' ──────────────────────────────
+  const [phase,          setPhase]         = useState('answering');
+  const [selected,       setSelected]      = useState(null);
+  const [answered,       setAnswered]      = useState(false);
+  const [extraLifeUsed,  setExtraLifeUsed] = useState(false);
+  const [flashColor,     setFlashColor]    = useState('#27ae60');
 
-export default function QuizModal({ question, onAnswer }) {
-  const [selected, setSelected] = useState(null);
-  const [answered, setAnswered] = useState(false);
+  // ── Animated values ───────────────────────────────────────────────────
+  const slideAnim   = useRef(new Animated.Value(80)).current;
+  const fadeAnim    = useRef(new Animated.Value(0)).current;
+  const flashAnim   = useRef(new Animated.Value(0)).current;
+  const shakeAnim   = useRef(new Animated.Value(0)).current;
+  const scaleAnims  = useRef(question.answers.map(() => new Animated.Value(1))).current;
+  // Second-chance card entrance
+  const sc2Slide    = useRef(new Animated.Value(40)).current;
+  const sc2Fade     = useRef(new Animated.Value(0)).current;
 
-  // Slide-up + fade-in entrance
-  const slideAnim = useRef(new Animated.Value(80)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
+  // ── Entrance animation ────────────────────────────────────────────────
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 250,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 70,
-        friction: 10,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 70, friction: 10, useNativeDriver: true }),
     ]).start();
   }, []);
 
-  // Per-answer scale animations (bounce on tap)
-  const scaleAnims = useRef(
-    question.answers.map(() => new Animated.Value(1))
-  ).current;
+  // ── Helpers ───────────────────────────────────────────────────────────
+  const showGreenFlash = () => {
+    setFlashColor('#27ae60');
+    Animated.sequence([
+      Animated.timing(flashAnim, { toValue: 0.45, duration: 80,  useNativeDriver: false }),
+      Animated.timing(flashAnim, { toValue: 0,    duration: 350, useNativeDriver: false }),
+    ]).start();
+  };
 
+  const showRedFlash = () => {
+    setFlashColor('#c0392b');
+    Animated.sequence([
+      Animated.timing(flashAnim, { toValue: 0.5,  duration: 80,  useNativeDriver: false }),
+      Animated.timing(flashAnim, { toValue: 0,    duration: 400, useNativeDriver: false }),
+    ]).start();
+    // Card shake
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue:  12, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -12, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue:   8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue:  -8, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue:   4, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue:   0, duration: 55, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const animateSecondChanceIn = () => {
+    sc2Slide.setValue(40);
+    sc2Fade.setValue(0);
+    Animated.parallel([
+      Animated.timing(sc2Fade,  { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.spring(sc2Slide, { toValue: 0, tension: 70, friction: 10, useNativeDriver: true }),
+    ]).start();
+  };
+
+  // ── Answer selection ──────────────────────────────────────────────────
   const handleSelect = (index) => {
     if (answered) return;
     setSelected(index);
@@ -49,62 +85,127 @@ export default function QuizModal({ question, onAnswer }) {
 
     // Bounce the tapped answer
     Animated.sequence([
-      Animated.timing(scaleAnims[index], {
-        toValue: 1.08,
-        duration: 80,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnims[index], {
-        toValue: 1,
-        duration: 80,
-        useNativeDriver: true,
-      }),
+      Animated.timing(scaleAnims[index], { toValue: 1.1, duration: 70, useNativeDriver: true }),
+      Animated.timing(scaleAnims[index], { toValue: 1,   duration: 70, useNativeDriver: true }),
     ]).start();
 
     const isCorrect = index === question.correctIndex;
-    setTimeout(() => onAnswer(isCorrect), RESULT_DELAY_MS);
+
+    if (isCorrect) {
+      showGreenFlash();
+      setTimeout(() => onAnswer(true), RESULT_DELAY_MS);
+    } else {
+      showRedFlash();
+      const canRetry = hasExtraLife && !extraLifeUsed;
+      if (canRetry) {
+        setTimeout(() => {
+          setPhase('second_chance');
+          animateSecondChanceIn();
+        }, SECOND_CHANCE_DELAY);
+      } else {
+        setTimeout(() => onAnswer(false), RESULT_DELAY_MS);
+      }
+    }
   };
 
-  const answerBg = (index) => {
-    if (selected === null) return styles.answerDefault;
-    if (index === question.correctIndex) return styles.answerCorrect;
-    if (index === selected) return styles.answerWrong;
-    return styles.answerDim;
+  // ── Try Again (consume extra life, reset question) ────────────────────
+  const handleTryAgain = () => {
+    setExtraLifeUsed(true);
+    onUseExtraLife();
+    setPhase('answering');
+    setSelected(null);
+    setAnswered(false);
+    // Reset all answer scales
+    scaleAnims.forEach((a) => a.setValue(1));
   };
 
-  const answerIcon = (index) => {
+  // ── Helpers for answer styling ────────────────────────────────────────
+  const answerBg = (i) => {
+    if (selected === null) return styles.ansDefault;
+    if (i === question.correctIndex) return styles.ansCorrect;
+    if (i === selected) return styles.ansWrong;
+    return styles.ansDim;
+  };
+  const ansIcon = (i) => {
     if (selected === null) return null;
-    if (index === question.correctIndex) return '✅ ';
-    if (index === selected) return '❌ ';
+    if (i === question.correctIndex) return '✅ ';
+    if (i === selected) return '❌ ';
     return null;
   };
 
+  // ─────────────────────────────────────────────────────────────────────
+  // SECOND CHANCE SCREEN
+  // ─────────────────────────────────────────────────────────────────────
+  if (phase === 'second_chance') {
+    return (
+      <Modal visible transparent animationType="none">
+        <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+          <Animated.View
+            style={[
+              styles.scCard,
+              { opacity: sc2Fade, transform: [{ translateY: sc2Slide }] },
+            ]}
+          >
+            <Text style={styles.scEmoji}>❤️</Text>
+            <Text style={styles.scTitle}>EXTRA LIFE!</Text>
+            <Text style={styles.scSub}>You answered wrong, but you have an extra life.</Text>
+            <Text style={styles.scQuestion}>{question.question}</Text>
+
+            <TouchableOpacity
+              style={styles.tryAgainBtn}
+              onPress={handleTryAgain}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.tryAgainText}>🔄  TRY AGAIN</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.giveUpBtn}
+              onPress={() => onAnswer(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.giveUpText}>💀  Give up</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // MAIN QUIZ SCREEN
+  // ─────────────────────────────────────────────────────────────────────
   return (
     <Modal visible transparent animationType="none">
+      {/* Full-screen flash overlay */}
+      <Animated.View
+        style={[styles.flashOverlay, { backgroundColor: flashColor, opacity: flashAnim }]}
+        pointerEvents="none"
+      />
+
       <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
         <Animated.View
           style={[
             styles.card,
-            { transform: [{ translateY: slideAnim }] },
+            { transform: [{ translateY: slideAnim }, { translateX: shakeAnim }] },
           ]}
         >
           {/* Header */}
           <Text style={styles.headerEmoji}>🤔</Text>
-          <Text style={styles.headerTitle}>QUICK! Answer to survive!</Text>
+          <Text style={styles.headerTitle}>
+            {extraLifeUsed ? '⚡ LAST CHANCE!' : 'QUICK! Answer to survive!'}
+          </Text>
           <View style={styles.divider} />
 
           {/* Question */}
           <Text style={styles.question}>{question.question}</Text>
 
-          {/* Answers */}
+          {/* 2×2 answer grid */}
           <View style={styles.answersGrid}>
             {question.answers.map((ans, i) => (
               <Animated.View
                 key={i}
-                style={[
-                  styles.answerWrapper,
-                  { transform: [{ scale: scaleAnims[i] }] },
-                ]}
+                style={[styles.answerWrapper, { transform: [{ scale: scaleAnims[i] }] }]}
               >
                 <TouchableOpacity
                   style={[styles.answerBtn, answerBg(i)]}
@@ -113,27 +214,31 @@ export default function QuizModal({ question, onAnswer }) {
                   activeOpacity={0.8}
                 >
                   <Text style={styles.answerText}>
-                    {answerIcon(i)}
-                    {ans}
+                    {ansIcon(i)}{ans}
                   </Text>
                 </TouchableOpacity>
               </Animated.View>
             ))}
           </View>
 
-          {/* Hint */}
+          {/* Status hint */}
           {!answered && (
-            <Text style={styles.hint}>Tap an answer above!</Text>
+            <Text style={styles.hint}>Tap an answer!</Text>
           )}
           {answered && selected === question.correctIndex && (
-            <Text style={[styles.hint, styles.hintCorrect]}>
-              🎉 Correct! Keep running!
-            </Text>
+            <Text style={[styles.hint, styles.hintCorrect]}>🎉 Correct! Keep running!</Text>
           )}
           {answered && selected !== question.correctIndex && (
             <Text style={[styles.hint, styles.hintWrong]}>
-              💀 Wrong! Game over...
+              {hasExtraLife && !extraLifeUsed ? '⏳ Wait…' : '💀 Wrong!'}
             </Text>
+          )}
+
+          {/* Extra-life indicator */}
+          {hasExtraLife && !extraLifeUsed && (
+            <View style={styles.extraLifeBar}>
+              <Text style={styles.extraLifeText}>❤️ Extra Life available</Text>
+            </View>
           )}
         </Animated.View>
       </Animated.View>
@@ -141,31 +246,37 @@ export default function QuizModal({ question, onAnswer }) {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.82)',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
+    zIndex: 2,
   },
+
+  // ── Main quiz card ──
   card: {
     width: '100%',
     maxWidth: 420,
     backgroundColor: '#16163a',
     borderRadius: 28,
-    padding: 26,
+    padding: 24,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#4ECDC4',
     shadowColor: '#4ECDC4',
     shadowOpacity: 0.4,
     shadowRadius: 20,
-    elevation: 12,
+    elevation: 14,
   },
-
-  // Header
-  headerEmoji: { fontSize: 50, marginBottom: 6 },
+  headerEmoji: { fontSize: 48, marginBottom: 6 },
   headerTitle: {
     color: '#FFD700',
     fontSize: 13,
@@ -179,65 +290,99 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a2a5a',
     marginVertical: 14,
   },
-
-  // Question
   question: {
     color: '#ffffff',
     fontSize: 26,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 22,
+    marginBottom: 20,
   },
 
-  // Answers grid (2 columns)
+  // Answers 2×2
   answersGrid: {
     width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
   },
-  answerWrapper: {
-    width: '48%',
-    marginBottom: 10,
-  },
+  answerWrapper: { width: '48%', marginBottom: 10 },
   answerBtn: {
     borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 10,
     alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 2,
   },
-  answerDefault: {
-    backgroundColor: '#22224a',
-    borderColor: '#4ECDC4',
+  ansDefault:  { backgroundColor: '#22224a', borderColor: '#4ECDC4' },
+  ansCorrect:  { backgroundColor: '#0d5c2f', borderColor: '#27ae60' },
+  ansWrong:    { backgroundColor: '#5c1313', borderColor: '#c0392b' },
+  ansDim:      { backgroundColor: '#1a1a30', borderColor: '#2a2a4a', opacity: 0.4 },
+  answerText:  { color: '#ffffff', fontSize: 20, fontWeight: 'bold', textAlign: 'center' },
+
+  // Hints
+  hint:         { marginTop: 10, color: '#8888aa', fontSize: 13 },
+  hintCorrect:  { color: '#27ae60', fontWeight: 'bold', fontSize: 15 },
+  hintWrong:    { color: '#e74c3c', fontWeight: 'bold', fontSize: 15 },
+
+  // Extra-life bar
+  extraLifeBar: {
+    marginTop: 10,
+    backgroundColor: '#2a0a0a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#e74c3c',
   },
-  answerCorrect: {
-    backgroundColor: '#0d5c2f',
-    borderColor: '#27ae60',
+  extraLifeText: { color: '#e74c3c', fontSize: 12, fontWeight: 'bold' },
+
+  // ── Second-chance card ──
+  scCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#16163a',
+    borderRadius: 28,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#e74c3c',
+    shadowColor: '#e74c3c',
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 14,
   },
-  answerWrong: {
-    backgroundColor: '#5c1313',
-    borderColor: '#c0392b',
-  },
-  answerDim: {
-    backgroundColor: '#1a1a30',
-    borderColor: '#2a2a4a',
-    opacity: 0.45,
-  },
-  answerText: {
-    color: '#ffffff',
+  scEmoji:    { fontSize: 52, marginBottom: 8 },
+  scTitle:    { color: '#e74c3c', fontSize: 26, fontWeight: 'bold', letterSpacing: 2, marginBottom: 8 },
+  scSub:      { color: '#8888aa', fontSize: 14, textAlign: 'center', marginBottom: 16 },
+  scQuestion: {
+    color: '#FFD700',
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
+    marginBottom: 24,
+    backgroundColor: '#0f0f28',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    width: '100%',
   },
-
-  // Hint
-  hint: {
-    marginTop: 10,
-    color: '#8888aa',
-    fontSize: 13,
+  tryAgainBtn: {
+    backgroundColor: '#27ae60',
+    borderRadius: 18,
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
+    shadowColor: '#27ae60',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  hintCorrect: { color: '#27ae60', fontWeight: 'bold', fontSize: 15 },
-  hintWrong: { color: '#e74c3c', fontWeight: 'bold', fontSize: 15 },
+  tryAgainText: { color: 'white', fontSize: 18, fontWeight: 'bold', letterSpacing: 2 },
+  giveUpBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  giveUpText: { color: '#555577', fontSize: 14, fontWeight: 'bold' },
 });
