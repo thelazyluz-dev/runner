@@ -8,14 +8,16 @@ import {
   Dimensions,
 } from 'react-native';
 import { useGameStore, ACTIONS } from '../store/GameContext';
+import { T } from '../i18n/he';
+import { RUBIK, RUBIK_BOLD } from '../utils/fonts';
 
 const { width: W } = Dimensions.get('window');
 
 const COLOR_OPTIONS = [
-  { color: null,      label: 'Default', preview: '#333',    free: true  },
-  { color: '#4ECDC4', label: 'Teal',    preview: '#4ECDC4', free: false },
-  { color: '#9B59B6', label: 'Purple',  preview: '#9B59B6', free: false },
-  { color: '#FFD700', label: 'Gold',    preview: '#FFD700', free: false },
+  { color: null,      labelKey: 'default', preview: '#333',    free: true  },
+  { color: '#4ECDC4', labelKey: 'teal',    preview: '#4ECDC4', free: false },
+  { color: '#9B59B6', labelKey: 'purple',  preview: '#9B59B6', free: false },
+  { color: '#FFD700', labelKey: 'gold',    preview: '#FFD700', free: false },
 ];
 
 export default function ShopScreen({ onBack }) {
@@ -29,11 +31,11 @@ export default function ShopScreen({ onBack }) {
       {/* ── Header ── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
-          <Text style={styles.backText}>← BACK</Text>
+          <Text style={[styles.backText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.backBtn}</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>🛒 SHOP</Text>
+        <Text style={[styles.title, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.shopTitle}</Text>
         <View style={styles.coinBadge}>
-          <Text style={styles.coinText}>🪙 {state.coins}</Text>
+          <Text style={[styles.coinText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.shopCoins(state.coins)}</Text>
         </View>
       </View>
 
@@ -47,13 +49,11 @@ export default function ShopScreen({ onBack }) {
           <View style={styles.cardTop}>
             <Text style={styles.cardIcon}>❤️</Text>
             <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>Extra Life</Text>
-              <Text style={styles.cardDesc}>
-                Retry a quiz question once before game over
-              </Text>
+              <Text style={[styles.cardName, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.shopItems.extraLifeName}</Text>
+              <Text style={[styles.cardDesc, RUBIK && { fontFamily: RUBIK }]}>{T.shopItems.extraLifeDesc}</Text>
               {state.extraLives > 0 && (
-                <Text style={styles.ownedCount}>
-                  ✅ You own: {state.extraLives}
+                <Text style={[styles.ownedCount, RUBIK && { fontFamily: RUBIK }]}>
+                  ✅ ×{state.extraLives}
                 </Text>
               )}
             </View>
@@ -64,8 +64,8 @@ export default function ShopScreen({ onBack }) {
             onPress={() => buy(ACTIONS.BUY_EXTRA_LIFE)}
             activeOpacity={0.8}
           >
-            <Text style={[styles.buyBtnText, state.coins < 50 && styles.buyBtnTextOff]}>
-              BUY  50 🪙
+            <Text style={[styles.buyBtnText, state.coins < 50 && styles.buyBtnTextOff, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>
+              {T.buy}  50 🪙
             </Text>
           </TouchableOpacity>
         </View>
@@ -75,18 +75,16 @@ export default function ShopScreen({ onBack }) {
           <View style={styles.cardTop}>
             <Text style={styles.cardIcon}>🛡️</Text>
             <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>Start Shield</Text>
-              <Text style={styles.cardDesc}>
-                Every new run begins with an active shield
-              </Text>
+              <Text style={[styles.cardName, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.shopItems.shieldName}</Text>
+              <Text style={[styles.cardDesc, RUBIK && { fontFamily: RUBIK }]}>{T.shopItems.shieldDesc}</Text>
               {state.startShieldOwned && (
-                <Text style={styles.ownedCount}>✅ Owned – active every run</Text>
+                <Text style={[styles.ownedCount, RUBIK && { fontFamily: RUBIK }]}>✅ {T.owned}</Text>
               )}
             </View>
           </View>
           {state.startShieldOwned ? (
             <View style={styles.ownedBadge}>
-              <Text style={styles.ownedBadgeText}>OWNED</Text>
+              <Text style={[styles.ownedBadgeText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.owned}</Text>
             </View>
           ) : (
             <TouchableOpacity
@@ -95,8 +93,8 @@ export default function ShopScreen({ onBack }) {
               onPress={() => buy(ACTIONS.BUY_START_SHIELD)}
               activeOpacity={0.8}
             >
-              <Text style={[styles.buyBtnText, state.coins < 30 && styles.buyBtnTextOff]}>
-                BUY  30 🪙
+              <Text style={[styles.buyBtnText, state.coins < 30 && styles.buyBtnTextOff, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>
+                {T.buy}  30 🪙
               </Text>
             </TouchableOpacity>
           )}
@@ -107,20 +105,19 @@ export default function ShopScreen({ onBack }) {
           <View style={styles.cardTop}>
             <Text style={styles.cardIcon}>🎨</Text>
             <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>Player Color</Text>
-              <Text style={styles.cardDesc}>
-                Add a colored ring around your runner  •  20 🪙 each
-              </Text>
+              <Text style={[styles.cardName, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.shopItems.colorName}</Text>
+              <Text style={[styles.cardDesc, RUBIK && { fontFamily: RUBIK }]}>{T.shopItems.colorDesc}  •  20 🪙</Text>
             </View>
           </View>
 
           <View style={styles.swatchRow}>
-            {COLOR_OPTIONS.map(({ color, label, preview, free }) => {
+            {COLOR_OPTIONS.map(({ color, labelKey, preview, free }) => {
+              const label    = T.colorNames[labelKey];
               const isActive = state.playerColor === color;
               const canBuy   = free || isActive || state.coins >= 20;
               return (
                 <TouchableOpacity
-                  key={label}
+                  key={labelKey}
                   style={[styles.swatch, isActive && styles.swatchActive]}
                   onPress={() => buy(ACTIONS.SET_PLAYER_COLOR, { color })}
                   disabled={!canBuy}
@@ -129,13 +126,13 @@ export default function ShopScreen({ onBack }) {
                   <View style={[styles.swatchCircle, { backgroundColor: preview }]}>
                     {!color && <Text style={styles.swatchEmoji}>🏃</Text>}
                   </View>
-                  <Text style={[styles.swatchLabel, isActive && styles.swatchLabelActive]}>
+                  <Text style={[styles.swatchLabel, isActive && styles.swatchLabelActive, RUBIK && { fontFamily: RUBIK }]}>
                     {label}
                   </Text>
                   {isActive
                     ? <Text style={styles.swatchCheck}>✓</Text>
                     : free
-                      ? <Text style={styles.swatchFree}>FREE</Text>
+                      ? <Text style={[styles.swatchFree, RUBIK && { fontFamily: RUBIK }]}>{T.buy}</Text>
                       : <Text style={[styles.swatchPrice, !canBuy && styles.swatchPriceOff]}>
                           20 🪙
                         </Text>
@@ -148,11 +145,11 @@ export default function ShopScreen({ onBack }) {
 
         {/* ─────────────────────────────── TIPS ─── */}
         <View style={styles.tipsCard}>
-          <Text style={styles.tipsTitle}>💡 How to earn coins</Text>
-          <Text style={styles.tipLine}>• Collect 🪙 while running</Text>
-          <Text style={styles.tipLine}>• Combo ×2 → double coins for 5 s</Text>
-          <Text style={styles.tipLine}>• Combo ×3 → Slow motion 🐢</Text>
-          <Text style={styles.tipLine}>• Combo ×4 → Free shield 🛡️</Text>
+          <Text style={[styles.tipsTitle, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>💡 {T.instrCombo}</Text>
+          <Text style={[styles.tipLine, RUBIK && { fontFamily: RUBIK }]}>• {T.instrCoins}</Text>
+          <Text style={[styles.tipLine, RUBIK && { fontFamily: RUBIK }]}>• {T.doubleCoins}</Text>
+          <Text style={[styles.tipLine, RUBIK && { fontFamily: RUBIK }]}>• {T.slowMo}</Text>
+          <Text style={[styles.tipLine, RUBIK && { fontFamily: RUBIK }]}>• {T.shieldActive}</Text>
         </View>
       </ScrollView>
     </View>

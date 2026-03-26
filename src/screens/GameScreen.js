@@ -11,6 +11,94 @@ import {
 import QuizModal from '../components/QuizModal';
 import { QUESTIONS } from '../data/questions';
 import { useGameStore, ACTIONS } from '../store/GameContext';
+import { T } from '../i18n/he';
+import { RUBIK, RUBIK_BOLD } from '../utils/fonts';
+
+// ─── CollectEffect: "+N🪙" fly-up when a coin is collected ──────────────────
+function CollectEffect({ id, x, y, amount, onDone }) {
+  const move = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(move, { toValue: -60, duration: 700, useNativeDriver: true }),
+      Animated.sequence([
+        Animated.delay(300),
+        Animated.timing(fade, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]),
+    ]).start(() => onDone(id));
+  }, []);
+  return (
+    <Animated.Text
+      style={{
+        position: 'absolute',
+        left: x - 24,
+        top: y,
+        color: '#FFD700',
+        fontFamily: RUBIK_BOLD,
+        fontWeight: 'bold',
+        fontSize: 18,
+        opacity: fade,
+        transform: [{ translateY: move }],
+        zIndex: 200,
+        pointerEvents: 'none',
+      }}
+    >
+      +{amount}🪙
+    </Animated.Text>
+  );
+}
+
+// ─── ParticleBurst: 8 circles burst outward (combo threshold) ───────────────
+const BURST_COLORS = ['#FF6B6B','#FFD700','#4ECDC4','#FF6B6B','#FFD700','#4ECDC4','#FF6B6B','#FFD700'];
+const BURST_DIRS   = [...Array(8)].map((_, i) => {
+  const a = (i * Math.PI * 2) / 8;
+  return { dx: Math.cos(a) * 45, dy: Math.sin(a) * 45 };
+});
+
+function ParticleBurst({ id, x, y, onDone }) {
+  const anims = useRef(
+    [...Array(8)].map(() => ({ move: new Animated.Value(0), fade: new Animated.Value(1) }))
+  ).current;
+  useEffect(() => {
+    Animated.parallel(
+      anims.map(({ move, fade }) =>
+        Animated.parallel([
+          Animated.timing(move, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.sequence([
+            Animated.delay(200),
+            Animated.timing(fade, { toValue: 0, duration: 400, useNativeDriver: true }),
+          ]),
+        ])
+      )
+    ).start(() => onDone(id));
+  }, []);
+  return (
+    <>
+      {anims.map(({ move, fade }, i) => {
+        const tx = move.interpolate({ inputRange: [0, 1], outputRange: [0, BURST_DIRS[i].dx] });
+        const ty = move.interpolate({ inputRange: [0, 1], outputRange: [0, BURST_DIRS[i].dy] });
+        return (
+          <Animated.View
+            key={i}
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: x - 6,
+              top: y - 6,
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: BURST_COLORS[i],
+              opacity: fade,
+              transform: [{ translateX: tx }, { translateY: ty }],
+              zIndex: 200,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -80,17 +168,21 @@ export default function GameScreen({ onGameOver }) {
   const [hasShield,     setHasShield]     = useState(false);
   const [doubleCoins,   setDoubleCoins]   = useState(false);
   const [slowMo,        setSlowMo]        = useState(false);
-  const [shieldBlocked, setShieldBlocked] = useState(false); // "SHIELD BLOCKED!" flash
+  const [shieldBlocked, setShieldBlocked] = useState(false);
+  // Effects
+  const [collectEffects, setCollectEffects] = useState([]);
+  const [particleBursts, setParticleBursts] = useState([]);
 
-  // ── Refs (no stale-closure problems in intervals) ────────────────────────
+  // ── Refs ─────────────────────────────────────────────────────────────────
   const laneRef            = useRef(1);
   const pausedRef          = useRef(false);
+  const preCollisionRef    = useRef(false); // blocks re-hit during slow-mo window
   const obstaclesRef       = useRef([]);
   const coinsRef           = useRef([]);
   const scoreRef           = useRef(0);
   const coinCountRef       = useRef(0);
   const speedRef           = useRef(INITIAL_SPEED);
-  const baseSpeedRef       = useRef(INITIAL_SPEED); // speed outside slow-mo
+  const baseSpeedRef       = useRef(INITIAL_SPEED);
   const comboRef           = useRef(0);
   const shieldRef          = useRef(false);
   const doubleCoinsRef     = useRef(false);
@@ -100,17 +192,19 @@ export default function GameScreen({ onGameOver }) {
   const doubleCoinsTimer   = useRef(null);
   const slowMoTimer        = useRef(null);
   const shieldGlowLoop     = useRef(null);
+  const comboGlowLoop      = useRef(null);
 
   // ── Animated values ──────────────────────────────────────────────────────
-  // Player translate (left-edge X) & lane-switch scale pulse
-  const playerTX         = useRef(new Animated.Value(LANE_CENTERS[1] - PLAYER_W / 2)).current;
-  const playerScale      = useRef(new Animated.Value(1)).current;
-  // Correct-answer bounce (multiplied with playerScale)
-  const playerBounce     = useRef(new Animated.Value(1)).current;
-  // Shield glow pulse (opacity of the ring)
-  const shieldPulseAnim  = useRef(new Animated.Value(0)).current;
-  // Road scrolling stripes
-  const stripeY          = useRef(new Animated.Value(0)).current;
+  const playerTX        = useRef(new Animated.Value(LANE_CENTERS[1] - PLAYER_W / 2)).current;
+  const playerScale     = useRef(new Animated.Value(1)).current;
+  const playerBounce    = useRef(new Animated.Value(1)).current;
+  const idleBounceAnim  = useRef(new Animated.Value(0)).current;  // player idle Y bob
+  const shieldPulseAnim = useRef(new Animated.Value(0)).current;
+  const comboGlowAnim   = useRef(new Animated.Value(0)).current;  // combo ring opacity
+  const roadShakeAnim   = useRef(new Animated.Value(0)).current;  // road translateX shake
+  const coinSpinAnim    = useRef(new Animated.Value(0)).current;  // shared coin rotation
+  const coinScaleAnim   = useRef(new Animated.Value(1)).current;  // shared coin pulse
+  const stripeY         = useRef(new Animated.Value(0)).current;
 
   // ── Keep reviewQueue ref in sync with the store ──────────────────────────
   useEffect(() => {
@@ -125,6 +219,64 @@ export default function GameScreen({ onGameOver }) {
     loop.start();
     return () => loop.stop();
   }, []);
+
+  // ── Player idle bounce ────────────────────────────────────────────────────
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(idleBounceAnim, { toValue: -7, duration: 480, useNativeDriver: true }),
+        Animated.timing(idleBounceAnim, { toValue: 0,  duration: 480, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  // ── Coin spin + scale pulse ───────────────────────────────────────────────
+  useEffect(() => {
+    const spin = Animated.loop(
+      Animated.timing(coinSpinAnim, { toValue: 1, duration: 1200, useNativeDriver: true })
+    );
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(coinScaleAnim, { toValue: 1.25, duration: 600, useNativeDriver: true }),
+        Animated.timing(coinScaleAnim, { toValue: 1,    duration: 600, useNativeDriver: true }),
+      ])
+    );
+    spin.start();
+    pulse.start();
+    return () => { spin.stop(); pulse.stop(); };
+  }, []);
+
+  // ── Road shake on collision ───────────────────────────────────────────────
+  const shakeRoad = useCallback(() => {
+    roadShakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(roadShakeAnim, { toValue:  12, duration: 50, useNativeDriver: true }),
+      Animated.timing(roadShakeAnim, { toValue: -12, duration: 50, useNativeDriver: true }),
+      Animated.timing(roadShakeAnim, { toValue:   8, duration: 50, useNativeDriver: true }),
+      Animated.timing(roadShakeAnim, { toValue:  -8, duration: 50, useNativeDriver: true }),
+      Animated.timing(roadShakeAnim, { toValue:   0, duration: 50, useNativeDriver: true }),
+    ]).start();
+  }, [roadShakeAnim]);
+
+  // ── Combo glow helpers ────────────────────────────────────────────────────
+  const startComboGlow = useCallback(() => {
+    if (comboGlowLoop.current) comboGlowLoop.current.stop();
+    comboGlowAnim.setValue(0.3);
+    comboGlowLoop.current = Animated.loop(
+      Animated.sequence([
+        Animated.timing(comboGlowAnim, { toValue: 1,   duration: 400, useNativeDriver: true }),
+        Animated.timing(comboGlowAnim, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+      ])
+    );
+    comboGlowLoop.current.start();
+  }, [comboGlowAnim]);
+
+  const stopComboGlow = useCallback(() => {
+    if (comboGlowLoop.current) comboGlowLoop.current.stop();
+    comboGlowAnim.setValue(0);
+  }, [comboGlowAnim]);
 
   // ── Shield glow helpers ───────────────────────────────────────────────────
   const startShieldGlow = () => {
@@ -181,35 +333,40 @@ export default function GameScreen({ onGameOver }) {
     (hitId) => {
       // Shield absorbs the hit
       if (shieldRef.current) {
-        shieldRef.current = false;
+        shieldRef.current     = false;
+        preCollisionRef.current = false;  // allow future hits
         setHasShield(false);
         stopShieldGlow();
 
-        // Remove the obstacle silently
         obstaclesRef.current = obstaclesRef.current.filter((o) => o.id !== hitId);
         setObstacles([...obstaclesRef.current]);
 
-        // "SHIELD BLOCKED!" banner
         setShieldBlocked(true);
         setTimeout(() => setShieldBlocked(false), 900);
         return;
       }
 
-      // Normal collision: pause + vibrate + flash
-      pausedRef.current = true;
+      // Slow-mo visual window before pausing for quiz
+      const prevSpeed = speedRef.current;
+      speedRef.current = Math.max(prevSpeed * 0.15, 0.4);
+
       Vibration.vibrate([0, 120, 80, 120]);
+      shakeRoad();
       setRoadFlash(true);
       setPlayerBlinking(true);
-      setTimeout(() => setRoadFlash(false),    400);
+      setTimeout(() => setRoadFlash(false),      400);
       setTimeout(() => setPlayerBlinking(false), 400);
 
       obstaclesRef.current = obstaclesRef.current.filter((o) => o.id !== hitId);
       setObstacles([...obstaclesRef.current]);
 
-      // Short dramatic pause, then quiz
+      // After 350 ms slow-mo, freeze and show quiz
       setTimeout(() => {
+        speedRef.current  = prevSpeed;
+        pausedRef.current = true;
+
         const rq = reviewQueueRef.current;
-        const q =
+        const q  =
           rq.length > 0 && Math.random() < 0.3
             ? rq[Math.floor(Math.random() * rq.length)]
             : QUESTIONS[Math.floor(Math.random() * QUESTIONS.length)];
@@ -217,9 +374,9 @@ export default function GameScreen({ onGameOver }) {
         currentQuestionRef.current = q;
         setCurrentQuestion(q);
         setShowQuiz(true);
-      }, 500);
+      }, 350);
     },
-    [] // all deps are stable refs / stable setters
+    [shakeRoad] // shakeRoad is stable (useCallback with stable deps)
   );
 
   // ── Main game loop ────────────────────────────────────────────────────────
@@ -236,15 +393,16 @@ export default function GameScreen({ onGameOver }) {
         .map((o) => ({ ...o, y: o.y + spd }))
         .filter((o) => o.y < ROAD_HEIGHT + 100);
 
-      // AABB collision check
-      const hit = movedObs.find(
+      // AABB collision check (blocked during slow-mo window)
+      const hit = !preCollisionRef.current && movedObs.find(
         (o) =>
           o.lane === lane &&
           o.y + OBS_H > PLAYER_Y &&
           o.y < PLAYER_Y + PLAYER_H
       );
       if (hit) {
-        obstaclesRef.current = movedObs;
+        preCollisionRef.current = true;
+        obstaclesRef.current    = movedObs;
         handleCollision(hit.id);
         return;
       }
@@ -272,6 +430,11 @@ export default function GameScreen({ onGameOver }) {
         const earned = doubleCoinsRef.current ? collected * 2 : collected;
         coinCountRef.current += earned;
         setCoinCount(coinCountRef.current);
+        // Fly-up "+N🪙" effect at player position
+        setCollectEffects((prev) => [
+          ...prev,
+          { id: uid(), x: LANE_CENTERS[lane], y: HUD_HEIGHT + PLAYER_Y - 20, amount: earned },
+        ]);
       }
       coinsRef.current = remaining;
 
@@ -370,6 +533,19 @@ export default function GameScreen({ onGameOver }) {
           startShieldGlow();
         }
 
+        // Combo glow ring: start at ×2, intensify at each level
+        if (newCombo >= COMBO_DOUBLE_COINS) {
+          startComboGlow();
+        }
+
+        // Particle burst at each combo threshold
+        if (newCombo >= COMBO_DOUBLE_COINS) {
+          setParticleBursts((prev) => [
+            ...prev,
+            { id: uid(), x: LANE_CENTERS[laneRef.current], y: HUD_HEIGHT + PLAYER_Y + PLAYER_H / 2 },
+          ]);
+        }
+
         // Player bounce on correct answer
         Animated.sequence([
           Animated.timing(playerBounce, { toValue: 1.35, duration: 100, useNativeDriver: true }),
@@ -378,12 +554,14 @@ export default function GameScreen({ onGameOver }) {
 
         setCurrentQuestion(null);
         currentQuestionRef.current = null;
-        pausedRef.current = false;
+        pausedRef.current       = false;
+        preCollisionRef.current = false;
 
       } else {
         // Wrong – reset combo
         comboRef.current = 0;
         setComboCount(0);
+        stopComboGlow();
 
         // Push to review queue for future re-appearance
         if (currentQuestionRef.current) {
@@ -398,7 +576,7 @@ export default function GameScreen({ onGameOver }) {
         onGameOver(scoreRef.current, coinCountRef.current);
       }
     },
-    [onGameOver, dispatch, playerBounce]
+    [onGameOver, dispatch, playerBounce, startComboGlow, stopComboGlow]
   );
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -410,131 +588,179 @@ export default function GameScreen({ onGameOver }) {
     ? { backgroundColor: store.playerColor + '44', borderColor: store.playerColor, borderWidth: 2 }
     : null;
 
+  // Combo glow ring color by level
+  const comboGlowColor =
+    comboCount >= 4 ? '#FF6B6B' :
+    comboCount >= 3 ? '#4ECDC4' : '#FFD700';
+
+  // Coin spin interpolation (shared for all coins)
+  const coinRotate = coinSpinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   return (
     <View style={styles.root}>
       {/* ── HUD ── */}
       <View style={styles.hud}>
         <View style={styles.hudBadge}>
           <Text style={styles.hudIcon}>⭐</Text>
-          <Text style={styles.hudValue}>{score}</Text>
+          <Text style={[styles.hudValue, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{score}</Text>
         </View>
         <View style={styles.hudCenter}>
-          <Text style={styles.hudTitle}>RUNNER!</Text>
+          <Text style={[styles.hudTitle, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.appTitle}</Text>
           <Text style={styles.speedLabel}>
             {'🔥'.repeat(Math.min(speedLevel, 5)) || '🏁'}
           </Text>
         </View>
         <View style={styles.hudBadge}>
           <Text style={styles.hudIcon}>🪙</Text>
-          <Text style={styles.hudValue}>{coinCount}</Text>
+          <Text style={[styles.hudValue, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{coinCount}</Text>
         </View>
       </View>
 
-      {/* ── Road ── */}
-      <View style={[styles.road, roadFlash && styles.roadFlash]}>
-        {/* Scrolling stripes */}
-        <Animated.View
-          style={[styles.stripesContainer, { transform: [{ translateY: stripeY }] }]}
-        >
-          {Array.from({ length: 16 }).map((_, i) => (
-            <View key={`sl-${i}`} style={[styles.stripe, { left: LANE_W - 1.5,     top: i * 80 - 80 }]} />
-          ))}
-          {Array.from({ length: 16 }).map((_, i) => (
-            <View key={`sr-${i}`} style={[styles.stripe, { left: LANE_W * 2 - 1.5, top: i * 80 - 40 }]} />
-          ))}
-        </Animated.View>
-
-        {/* Lane borders */}
-        <View style={[styles.laneBorder, { left: LANE_W     }]} />
-        <View style={[styles.laneBorder, { left: LANE_W * 2 }]} />
-
-        {/* Coins */}
-        {coins.map((coin) => (
-          <View
-            key={coin.id}
-            style={[styles.coin, { left: LANE_CENTERS[coin.lane] - COIN_SIZE / 2, top: coin.y }]}
+      {/* ── Road (wrapped for shake animation) ── */}
+      <Animated.View style={{ transform: [{ translateX: roadShakeAnim }] }}>
+        <View style={[styles.road, roadFlash && styles.roadFlash]}>
+          {/* Scrolling stripes */}
+          <Animated.View
+            style={[styles.stripesContainer, { transform: [{ translateY: stripeY }] }]}
           >
-            <Text style={styles.coinText}>{COIN_EMOJI}</Text>
-          </View>
-        ))}
+            {Array.from({ length: 16 }).map((_, i) => (
+              <View key={`sl-${i}`} style={[styles.stripe, { left: LANE_W - 1.5,     top: i * 80 - 80 }]} />
+            ))}
+            {Array.from({ length: 16 }).map((_, i) => (
+              <View key={`sr-${i}`} style={[styles.stripe, { left: LANE_W * 2 - 1.5, top: i * 80 - 40 }]} />
+            ))}
+          </Animated.View>
 
-        {/* Obstacles */}
-        {obstacles.map((obs) => (
-          <View
-            key={obs.id}
-            style={[styles.obstacle, { left: LANE_CENTERS[obs.lane] - OBS_W / 2, top: obs.y }]}
-          >
-            <Text style={styles.obsText}>{obs.emoji}</Text>
-          </View>
-        ))}
+          {/* Lane borders */}
+          <View style={[styles.laneBorder, { left: LANE_W     }]} />
+          <View style={[styles.laneBorder, { left: LANE_W * 2 }]} />
 
-        {/* ── Player ── */}
-        <Animated.View
-          style={[
-            styles.player,
-            {
-              top:     PLAYER_Y,
-              opacity: playerBlinking ? 0.15 : 1,
-              transform: [
-                { translateX: playerTX },
-                { scale: Animated.multiply(playerScale, playerBounce) },
-              ],
-            },
-          ]}
-        >
-          {/* Shield glow ring */}
-          {hasShield && (
-            <Animated.View style={[styles.shieldRing, { opacity: shieldPulseAnim }]} pointerEvents="none" />
-          )}
-          {/* Colour background */}
-          <View style={[styles.playerBg, playerColorStyle]}>
-            <Text style={styles.playerText}>{PLAYER_EMOJI}</Text>
-          </View>
-        </Animated.View>
+          {/* Coins — spinning + pulsing */}
+          {coins.map((coin) => (
+            <Animated.View
+              key={coin.id}
+              style={[
+                styles.coin,
+                {
+                  left: LANE_CENTERS[coin.lane] - COIN_SIZE / 2,
+                  top:  coin.y,
+                  transform: [{ rotate: coinRotate }, { scale: coinScaleAnim }],
+                },
+              ]}
+            >
+              <Text style={styles.coinText}>{COIN_EMOJI}</Text>
+            </Animated.View>
+          ))}
 
-        {/* ── Status overlay (combo + power-ups) ── */}
-        <View style={styles.statusOverlay} pointerEvents="none">
-          {comboCount >= 2 && (
-            <View style={styles.comboBadge}>
-              <Text style={styles.comboText}>
-                {'🔥'.repeat(Math.min(comboCount, 4))}  COMBO ×{comboCount}
-              </Text>
+          {/* Obstacles */}
+          {obstacles.map((obs) => (
+            <View
+              key={obs.id}
+              style={[styles.obstacle, { left: LANE_CENTERS[obs.lane] - OBS_W / 2, top: obs.y }]}
+            >
+              <Text style={styles.obsText}>{obs.emoji}</Text>
             </View>
-          )}
-          <View style={styles.powerupRow}>
-            {doubleCoins && (
-              <View style={[styles.powerupChip, { borderColor: '#FFD700' }]}>
-                <Text style={styles.powerupChipText}>🪙×2</Text>
-              </View>
+          ))}
+
+          {/* ── Player ── */}
+          <Animated.View
+            style={[
+              styles.player,
+              {
+                top:     PLAYER_Y,
+                opacity: playerBlinking ? 0.15 : 1,
+                transform: [
+                  { translateX: playerTX },
+                  { translateY: idleBounceAnim },
+                  { scale: Animated.multiply(playerScale, playerBounce) },
+                ],
+              },
+            ]}
+          >
+            {/* Combo glow ring */}
+            {comboCount >= 2 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.comboGlowRing, { borderColor: comboGlowColor, opacity: comboGlowAnim }]}
+              />
             )}
-            {slowMo && (
-              <View style={[styles.powerupChip, { borderColor: '#4ECDC4' }]}>
-                <Text style={styles.powerupChipText}>🐢 SLOW</Text>
-              </View>
-            )}
+            {/* Shield glow ring */}
             {hasShield && (
-              <Animated.View style={[styles.powerupChip, { borderColor: '#FFD700', opacity: shieldPulseAnim }]}>
-                <Text style={styles.powerupChipText}>🛡️</Text>
-              </Animated.View>
+              <Animated.View style={[styles.shieldRing, { opacity: shieldPulseAnim }]} pointerEvents="none" />
+            )}
+            {/* Colour background */}
+            <View style={[styles.playerBg, playerColorStyle]}>
+              <Text style={styles.playerText}>{PLAYER_EMOJI}</Text>
+            </View>
+          </Animated.View>
+
+          {/* ── Status overlay (combo + power-ups) ── */}
+          <View style={styles.statusOverlay} pointerEvents="none">
+            {comboCount >= 2 && (
+              <View style={[styles.comboBadge, { backgroundColor: comboGlowColor + 'dd' }]}>
+                <Text style={[styles.comboText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>
+                  {'🔥'.repeat(Math.min(comboCount, 4))}  {T.comboX(comboCount)}
+                </Text>
+              </View>
+            )}
+            <View style={styles.powerupRow}>
+              {doubleCoins && (
+                <View style={[styles.powerupChip, { borderColor: '#FFD700' }]}>
+                  <Text style={styles.powerupChipText}>{T.doubleCoins}</Text>
+                </View>
+              )}
+              {slowMo && (
+                <View style={[styles.powerupChip, { borderColor: '#4ECDC4' }]}>
+                  <Text style={styles.powerupChipText}>{T.slowMo}</Text>
+                </View>
+              )}
+              {hasShield && (
+                <Animated.View style={[styles.powerupChip, { borderColor: '#FFD700', opacity: shieldPulseAnim }]}>
+                  <Text style={styles.powerupChipText}>{T.shieldActive}</Text>
+                </Animated.View>
+              )}
+            </View>
+            {shieldBlocked && (
+              <View style={styles.shieldBlockBanner}>
+                <Text style={[styles.shieldBlockText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>
+                  {T.shieldBlocked}
+                </Text>
+              </View>
             )}
           </View>
-          {shieldBlocked && (
-            <View style={styles.shieldBlockBanner}>
-              <Text style={styles.shieldBlockText}>🛡️ SHIELD BLOCKED!</Text>
-            </View>
-          )}
         </View>
-      </View>
+      </Animated.View>
 
-      {/* ── Controls ── */}
+      {/* ── Collect effects (outside road so not clipped) ── */}
+      {collectEffects.map((e) => (
+        <CollectEffect
+          key={e.id}
+          {...e}
+          onDone={(id) => setCollectEffects((prev) => prev.filter((x) => x.id !== id))}
+        />
+      ))}
+
+      {/* ── Particle bursts ── */}
+      {particleBursts.map((b) => (
+        <ParticleBurst
+          key={b.id}
+          {...b}
+          onDone={(id) => setParticleBursts((prev) => prev.filter((x) => x.id !== id))}
+        />
+      ))}
+
+      {/* ── Controls (absolute so RTL doesn't flip physical left/right) ── */}
       <View style={styles.controls}>
         <TouchableOpacity
           style={[styles.btn, styles.btnLeft]}
           onPress={() => switchLane(-1)}
           activeOpacity={0.75}
         >
-          <Text style={styles.btnArrow}>◀</Text>
-          <Text style={styles.btnLabel}>LEFT</Text>
+          <Text style={styles.btnArrow}>{T.laneBtns.left}</Text>
+          <Text style={[styles.btnLabel, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>שמאל</Text>
         </TouchableOpacity>
 
         <View style={styles.btnDivider} />
@@ -544,8 +770,8 @@ export default function GameScreen({ onGameOver }) {
           onPress={() => switchLane(1)}
           activeOpacity={0.75}
         >
-          <Text style={styles.btnLabel}>RIGHT</Text>
-          <Text style={styles.btnArrow}>▶</Text>
+          <Text style={[styles.btnLabel, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>ימין</Text>
+          <Text style={styles.btnArrow}>{T.laneBtns.right}</Text>
         </TouchableOpacity>
       </View>
 
@@ -642,6 +868,15 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   playerText: { fontSize: 44 },
+  comboGlowRing: {
+    position: 'absolute',
+    width: PLAYER_W + 28,
+    height: PLAYER_H + 28,
+    borderRadius: 22,
+    borderWidth: 3,
+    top: -14,
+    left: -14,
+  },
   shieldRing: {
     position: 'absolute',
     width: PLAYER_W + 20,

@@ -8,6 +8,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useGameStore } from '../store/GameContext';
+import { T } from '../i18n/he';
+import { RUBIK, RUBIK_BOLD } from '../utils/fonts';
 
 const { width: W } = Dimensions.get('window');
 
@@ -41,11 +43,11 @@ export default function GameOverScreen({ score, coins, onRestart, onShop }) {
   }, []);
 
   const getRank = () => {
-    if (score >= 60) return { label: 'LEGEND',   emoji: '👑', color: '#FFD700' };
-    if (score >= 40) return { label: 'MASTER',   emoji: '🏆', color: '#C0C0C0' };
-    if (score >= 25) return { label: 'PRO',      emoji: '⭐', color: '#CD7F32' };
-    if (score >= 10) return { label: 'RUNNER',   emoji: '🏃', color: '#4ECDC4' };
-    return              { label: 'BEGINNER', emoji: '🐣', color: '#FF6B6B' };
+    if (score >= 60) return { label: T.ranks.legend,   emoji: '👑', color: '#FFD700' };
+    if (score >= 40) return { label: T.ranks.master,   emoji: '🏆', color: '#C0C0C0' };
+    if (score >= 25) return { label: T.ranks.pro,      emoji: '⭐', color: '#CD7F32' };
+    if (score >= 10) return { label: T.ranks.runner,   emoji: '🏃', color: '#4ECDC4' };
+    return              { label: T.ranks.beginner, emoji: '🐣', color: '#FF6B6B' };
   };
 
   const rank = getRank();
@@ -72,38 +74,36 @@ export default function GameOverScreen({ score, coins, onRestart, onShop }) {
 
       <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
         {/* Title */}
-        <Animated.Text style={[styles.title, { transform: [{ translateX: shakeAnim }] }]}>
-          💀 GAME OVER 💀
+        <Animated.Text style={[styles.title, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }, { transform: [{ translateX: shakeAnim }] }]}>
+          {T.gameOver}
         </Animated.Text>
 
         {/* Rank badge */}
         <View style={[styles.rankBadge, { borderColor: rank.color }]}>
           <Text style={styles.rankEmoji}>{rank.emoji}</Text>
-          <Text style={[styles.rankLabel, { color: rank.color }]}>{rank.label}</Text>
+          <Text style={[styles.rankLabel, { color: rank.color }, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{rank.label}</Text>
         </View>
 
         {/* Stats */}
         <View style={styles.statsBox}>
-          <StatRow icon="⭐" label="SCORE"       value={score} />
+          <StatRow icon="⭐" label={T.statScore}       value={score} />
           <View style={styles.statDiv} />
-          <StatRow icon="🪙" label="COINS EARNED" value={coins} />
+          <StatRow icon="🪙" label={T.statCoinsEarned} value={coins} />
           <View style={styles.statDiv} />
-          <StatRow icon="💰" label="TOTAL COINS"  value={state.coins} highlight />
+          <StatRow icon="💰" label={T.statTotalCoins}  value={state.coins} highlight />
         </View>
 
         {/* Play Again */}
         <TouchableOpacity style={styles.restartBtn} onPress={onRestart} activeOpacity={0.8}>
-          <Text style={styles.restartText}>🔄  PLAY AGAIN</Text>
+          <Text style={[styles.restartText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.playAgain}</Text>
         </TouchableOpacity>
 
         {/* Shop */}
         <TouchableOpacity style={styles.shopBtn} onPress={onShop} activeOpacity={0.8}>
-          <Text style={styles.shopText}>🛒  OPEN SHOP</Text>
+          <Text style={[styles.shopText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.openShop} {T.shopLabel}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.tipText}>
-          Combo ×2 = double coins  •  ×3 = slow mo  •  ×4 = free shield
-        </Text>
+        <Text style={[styles.tipText, RUBIK && { fontFamily: RUBIK }]}>{T.tipText}</Text>
       </Animated.View>
     </Animated.View>
   );
@@ -113,8 +113,8 @@ function StatRow({ icon, label, value, highlight }) {
   return (
     <View style={styles.statRow}>
       <Text style={styles.statIcon}>{icon}</Text>
-      <Text style={styles.statKey}>{label}</Text>
-      <Text style={[styles.statValue, highlight && styles.statValueHighlight]}>{value}</Text>
+      <Text style={[styles.statKey, RUBIK && { fontFamily: RUBIK }]}>{label}</Text>
+      <Text style={[styles.statValue, highlight && styles.statValueHighlight, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{value}</Text>
     </View>
   );
 }

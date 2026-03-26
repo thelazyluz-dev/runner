@@ -8,6 +8,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useGameStore } from '../store/GameContext';
+import { T } from '../i18n/he';
+import { RUBIK, RUBIK_BOLD } from '../utils/fonts';
 
 const { width: W } = Dimensions.get('window');
 
@@ -51,8 +53,8 @@ export default function StartScreen({ onStart, onShop }) {
 
       {/* Coin balance */}
       <View style={styles.coinBar}>
-        <Text style={styles.coinText}>🪙 {state.coins}</Text>
-        {state.startShieldOwned && <Text style={styles.shieldTag}>🛡️ Shield</Text>}
+        <Text style={[styles.coinText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>🪙 {state.coins}</Text>
+        {state.startShieldOwned && <Text style={styles.shieldTag}>🛡️</Text>}
         {state.extraLives > 0   && <Text style={styles.shieldTag}>❤️ ×{state.extraLives}</Text>}
       </View>
 
@@ -63,34 +65,34 @@ export default function StartScreen({ onStart, onShop }) {
 
       {/* Title */}
       <Animated.View style={{ transform: [{ scale: titleScale }] }}>
-        <Text style={styles.title}>RUNNER!</Text>
-        <Text style={styles.subtitle}>Dodge • Collect • Answer</Text>
+        <Text style={[styles.title, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.appTitle}</Text>
+        <Text style={[styles.subtitle, RUBIK && { fontFamily: RUBIK }]}>{T.subtitle}</Text>
       </Animated.View>
 
       {/* Instructions */}
       <View style={styles.instructions}>
-        <InstructionRow icon="◀▶"  text="Tap LEFT / RIGHT to switch lanes" />
-        <InstructionRow icon="🌵"  text="Dodge obstacles coming your way" />
-        <InstructionRow icon="🪙"  text="Collect coins — spend them in the shop" />
-        <InstructionRow icon="🤔"  text="Answer quiz correctly to keep going" />
-        <InstructionRow icon="🔥"  text="Build combos for epic power-ups!" />
+        <InstructionRow icon="◀▶"  text={T.instrLanes} />
+        <InstructionRow icon="🌵"  text={T.instrDodge} />
+        <InstructionRow icon="🪙"  text={T.instrCoins} />
+        <InstructionRow icon="🤔"  text={T.instrQuiz} />
+        <InstructionRow icon="🔥"  text={T.instrCombo} />
       </View>
 
       {/* Buttons row */}
       <View style={styles.btnRow}>
         <Animated.View style={[styles.startWrap, { transform: [{ scale: btnScale }] }]}>
           <TouchableOpacity style={styles.startBtn} onPress={onStart} activeOpacity={0.85}>
-            <Text style={styles.startText}>▶  START</Text>
+            <Text style={[styles.startText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.startGame}</Text>
           </TouchableOpacity>
         </Animated.View>
 
         <TouchableOpacity style={styles.shopBtn} onPress={onShop} activeOpacity={0.8}>
-          <Text style={styles.shopText}>🛒</Text>
-          <Text style={styles.shopLabel}>SHOP</Text>
+          <Text style={styles.shopText}>{T.openShop}</Text>
+          <Text style={[styles.shopLabel, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.shopLabel}</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.version}>v2.0 • Math Edition</Text>
+      <Text style={[styles.version, RUBIK && { fontFamily: RUBIK }]}>{T.version}</Text>
     </Animated.View>
   );
 }
@@ -99,7 +101,7 @@ function InstructionRow({ icon, text }) {
   return (
     <View style={styles.instrRow}>
       <Text style={styles.instrIcon}>{icon}</Text>
-      <Text style={styles.instrText}>{text}</Text>
+      <Text style={[styles.instrText, RUBIK && { fontFamily: RUBIK }]}>{text}</Text>
     </View>
   );
 }

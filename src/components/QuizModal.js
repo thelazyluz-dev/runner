@@ -7,6 +7,8 @@ import {
   Animated,
   StyleSheet,
 } from 'react-native';
+import { T } from '../i18n/he';
+import { RUBIK, RUBIK_BOLD } from '../utils/fonts';
 
 const RESULT_DELAY_MS      = 650;  // how long to show correct/wrong highlight
 const SECOND_CHANCE_DELAY  = 800;  // delay before showing "try again?" screen
@@ -147,16 +149,16 @@ export default function QuizModal({
             ]}
           >
             <Text style={styles.scEmoji}>❤️</Text>
-            <Text style={styles.scTitle}>EXTRA LIFE!</Text>
-            <Text style={styles.scSub}>You answered wrong, but you have an extra life.</Text>
-            <Text style={styles.scQuestion}>{question.question}</Text>
+            <Text style={[styles.scTitle, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.extraLifeTitle}</Text>
+            <Text style={[styles.scSub, RUBIK && { fontFamily: RUBIK }]}>{T.extraLifeSub}</Text>
+            <Text style={[styles.scQuestion, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{question.question}</Text>
 
             <TouchableOpacity
               style={styles.tryAgainBtn}
               onPress={handleTryAgain}
               activeOpacity={0.8}
             >
-              <Text style={styles.tryAgainText}>🔄  TRY AGAIN</Text>
+              <Text style={[styles.tryAgainText, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.tryAgain}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -164,7 +166,7 @@ export default function QuizModal({
               onPress={() => onAnswer(false)}
               activeOpacity={0.8}
             >
-              <Text style={styles.giveUpText}>💀  Give up</Text>
+              <Text style={[styles.giveUpText, RUBIK && { fontFamily: RUBIK }]}>{T.giveUp}</Text>
             </TouchableOpacity>
           </Animated.View>
         </Animated.View>
@@ -192,8 +194,8 @@ export default function QuizModal({
         >
           {/* Header */}
           <Text style={styles.headerEmoji}>🤔</Text>
-          <Text style={styles.headerTitle}>
-            {extraLifeUsed ? '⚡ LAST CHANCE!' : 'QUICK! Answer to survive!'}
+          <Text style={[styles.headerTitle, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>
+            {extraLifeUsed ? T.quizLastChance : T.quizHeader}
           </Text>
           <View style={styles.divider} />
 
@@ -223,21 +225,21 @@ export default function QuizModal({
 
           {/* Status hint */}
           {!answered && (
-            <Text style={styles.hint}>Tap an answer!</Text>
+            <Text style={[styles.hint, RUBIK && { fontFamily: RUBIK }]}>{T.tapAnswer}</Text>
           )}
           {answered && selected === question.correctIndex && (
-            <Text style={[styles.hint, styles.hintCorrect]}>🎉 Correct! Keep running!</Text>
+            <Text style={[styles.hint, styles.hintCorrect, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>{T.correct}</Text>
           )}
           {answered && selected !== question.correctIndex && (
-            <Text style={[styles.hint, styles.hintWrong]}>
-              {hasExtraLife && !extraLifeUsed ? '⏳ Wait…' : '💀 Wrong!'}
+            <Text style={[styles.hint, styles.hintWrong, RUBIK_BOLD && { fontFamily: RUBIK_BOLD }]}>
+              {hasExtraLife && !extraLifeUsed ? T.waitRetry : T.wrong}
             </Text>
           )}
 
           {/* Extra-life indicator */}
           {hasExtraLife && !extraLifeUsed && (
             <View style={styles.extraLifeBar}>
-              <Text style={styles.extraLifeText}>❤️ Extra Life available</Text>
+              <Text style={[styles.extraLifeText, RUBIK && { fontFamily: RUBIK }]}>{T.extraLifeAvail}</Text>
             </View>
           )}
         </Animated.View>
